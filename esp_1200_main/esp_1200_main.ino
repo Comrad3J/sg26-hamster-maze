@@ -12,6 +12,7 @@ constexpr EOrder COLOR_ORDER = GRB;
 constexpr uint8_t BRIGHTNESS = 128;
 constexpr uint8_t LIT_LEDS = 5;
 constexpr uint16_t FRAME_DELAY_MS = 40;
+constexpr float DIRECTION_CHANGE_CHANCE = 0.001f;
 
 // Motion tuning.
 constexpr float BASE_SPEED = 1.2f;
@@ -78,6 +79,7 @@ float targetSpeedForPosition(float position) {
 }
 
 void setup() {
+  randomSeed(esp_random());
   FastLED.addLeds<WS2812B, LED_PIN_A, COLOR_ORDER>(ledsA, LED_COUNT_A);
   FastLED.addLeds<WS2812B, LED_PIN_B, COLOR_ORDER>(ledsB, LED_COUNT_B);
   FastLED.setBrightness(BRIGHTNESS);
@@ -86,6 +88,7 @@ void setup() {
 void loop() {
   static float head = 0.0f;
   static float currentSpeed = BASE_SPEED;
+  static int8_t direction = 1;
 
   fill_solid(ledsA, LED_COUNT_A, CRGB::Black);
   fill_solid(ledsB, LED_COUNT_B, CRGB::Black);
@@ -93,15 +96,28 @@ void loop() {
   float targetSpeed = targetSpeedForPosition(head);
   currentSpeed += (targetSpeed - currentSpeed) * SPEED_RESPONSE;
 
+  if (random(10000) < static_cast<long>(DIRECTION_CHANGE_CHANCE * 10000.0f)) {
+    direction *= -1;
+  }
+
   for (uint8_t i = 0; i < LIT_LEDS; i++) {
-    uint16_t pixel = (static_cast<uint16_t>(head) + i) % LED_COUNT;
+    int32_t pixel = static_cast<int32_t>(head) + (i * direction);
+    while (pixel < 0) {
+      pixel += LED_COUNT;
+    }
+    while (pixel >= LED_COUNT) {
+      pixel -= LED_COUNT;
+    }
     setVirtualPixel(pixel, CRGB::White);
   }
 
   FastLED.show();
   delay(FRAME_DELAY_MS);
 
-  head += currentSpeed;
+  head += currentSpeed * direction;
+  while (head < 0.0f) {
+    head += LED_COUNT;
+  }
   while (head >= LED_COUNT) {
     head -= LED_COUNT;
   }

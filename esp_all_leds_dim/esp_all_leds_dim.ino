@@ -5,9 +5,9 @@
 #include <FastLED.h>
 
 constexpr uint8_t LED_PIN = 4;
-constexpr uint16_t LED_COUNT = 300;
+constexpr uint16_t LED_COUNT = 600;
 constexpr EOrder COLOR_ORDER = GRB;
-constexpr uint8_t BRIGHTNESS = 10;
+constexpr uint8_t BRIGHTNESS = 0;
 
 CRGB leds[LED_COUNT];
 
