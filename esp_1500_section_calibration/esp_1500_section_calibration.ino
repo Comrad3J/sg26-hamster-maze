@@ -23,6 +23,7 @@ struct StripSectionMap
   const StripSection *sections;
   uint8_t sectionCount;
   bool enabled;
+  uint16_t hideBeforePixel;
 };
 
 constexpr uint8_t LED_PIN_1 = 21; // Strip 1
@@ -34,22 +35,24 @@ constexpr uint16_t LED_COUNT_2 = 150; // LEDs 0..149
 constexpr uint16_t LED_COUNT_3 = 259; // LEDs 0..258
 
 constexpr EOrder COLOR_ORDER = RGB;
-constexpr uint8_t BRIGHTNESS = 190; // 255 full brightness
+constexpr uint8_t BRIGHTNESS = 170; // 255 full brightness
 constexpr uint8_t GRID_SPACING = 10;
 constexpr uint8_t BOUNDARY_WIDTH = 2;
 constexpr uint8_t NEXT_SECTION_MARKER_WIDTH = 5;
 constexpr bool SHOW_STRIP_1_SECTIONS = true;
 constexpr bool SHOW_STRIP_2_SECTIONS = false;
 constexpr bool SHOW_STRIP_3_SECTIONS = false;
+constexpr uint16_t STRIP_1_HIDE_BEFORE_PIXEL = 597; // Keeps LEDs 0..596 off while mapping after split C.
+constexpr uint16_t STRIP_2_HIDE_BEFORE_PIXEL = 0;
+constexpr uint16_t STRIP_3_HIDE_BEFORE_PIXEL = 0;
 
-// TODO: match with total length, trucate or extend the last section if needed
 const StripSection strip2Sections[] = {
     {60, SECTION_UP},
     {5, SECTION_HORIZONTAL},
     {20, SECTION_UP},
     {18, SECTION_HORIZONTAL},
     {25, SECTION_UP},
-    {10, SECTION_HORIZONTAL}};
+    {21, SECTION_HORIZONTAL}};
 
 const StripSection strip3Sections[] = {
     {15, SECTION_UP},
@@ -64,11 +67,45 @@ const StripSection strip3Sections[] = {
     {12, SECTION_HORIZONTAL},
     {30, SECTION_HORIZONTAL},
     {5, SECTION_DOWN},
-    {5, SECTION_HORIZONTAL},
+    {11, SECTION_HORIZONTAL},
 };
 
 const StripSection strip1Sections[] = {
-    {30, SECTION_UP},
+    {27, SECTION_HORIZONTAL},
+    {17, SECTION_UP},
+    {3, SECTION_HORIZONTAL},
+    {17, SECTION_UP},
+    {23, SECTION_HORIZONTAL},
+    {8, SECTION_HORIZONTAL},
+    {36, SECTION_DOWN},
+    {38, SECTION_HORIZONTAL},
+    {13, SECTION_UP},
+    {5, SECTION_HORIZONTAL},
+    {42, SECTION_UP},
+    {18, SECTION_HORIZONTAL},
+    {35, SECTION_UP},
+    {18, SECTION_HORIZONTAL},
+    // COMES IN SPLIT B (LENGTH SHOULD BE 300)
+    {23, SECTION_DOWN},
+    {10, SECTION_HORIZONTAL},
+    {50, SECTION_DOWN},
+    {30, SECTION_HORIZONTAL},
+    {12, SECTION_HORIZONTAL},
+    {15, SECTION_UP},
+    // COMES IN SPLIT D (LENGTH SHOULD BE 440))
+    {23, SECTION_UP},
+    {7, SECTION_HORIZONTAL},
+    {16, SECTION_UP},
+    {10, SECTION_UP},
+    {22, SECTION_HORIZONTAL},
+    {5, SECTION_HORIZONTAL},
+    {30, SECTION_DOWN},
+    {44, SECTION_UP},
+    // PASSES THORUGH SPLIT C (SHOULD BE 597)
+    {12, SECTION_HORIZONTAL},
+    {100, SECTION_DOWN},
+    {28, SECTION_UP}
+    // LOOPS BACK TO D (SHOULD BE 737 here)
 };
 
 constexpr uint8_t STRIP_1_SECTION_COUNT =
@@ -85,9 +122,9 @@ CRGB leds2[LED_COUNT_2];
 CRGB leds3[LED_COUNT_3];
 
 const StripSectionMap stripSectionMaps[] = {
-    {leds1, LED_COUNT_1, strip1Sections, STRIP_1_SECTION_COUNT, SHOW_STRIP_1_SECTIONS},
-    {leds2, LED_COUNT_2, strip2Sections, STRIP_2_SECTION_COUNT, SHOW_STRIP_2_SECTIONS},
-    {leds3, LED_COUNT_3, strip3Sections, STRIP_3_SECTION_COUNT, SHOW_STRIP_3_SECTIONS}};
+    {leds1, LED_COUNT_1, strip1Sections, STRIP_1_SECTION_COUNT, SHOW_STRIP_1_SECTIONS, STRIP_1_HIDE_BEFORE_PIXEL},
+    {leds2, LED_COUNT_2, strip2Sections, STRIP_2_SECTION_COUNT, SHOW_STRIP_2_SECTIONS, STRIP_2_HIDE_BEFORE_PIXEL},
+    {leds3, LED_COUNT_3, strip3Sections, STRIP_3_SECTION_COUNT, SHOW_STRIP_3_SECTIONS, STRIP_3_HIDE_BEFORE_PIXEL}};
 
 constexpr uint8_t STRIP_COUNT =
     sizeof(stripSectionMaps) / sizeof(stripSectionMaps[0]);
@@ -142,11 +179,22 @@ void drawMarker(CRGB *leds, uint16_t count, uint16_t pixel, uint8_t width, const
   }
 }
 
+void drawMarkerAfter(CRGB *leds, uint16_t count, uint16_t pixel, uint8_t width, const CRGB &color, uint16_t firstVisiblePixel)
+{
+  if (pixel < firstVisiblePixel)
+  {
+    return;
+  }
+
+  drawMarker(leds, count, pixel, width, color);
+}
+
 void drawMappedSections(
     CRGB *leds,
     uint16_t count,
     const StripSection *sections,
-    uint8_t sectionCount)
+    uint8_t sectionCount,
+    uint16_t firstVisiblePixel)
 {
   fill_solid(leds, count, CRGB::Black);
 
@@ -161,26 +209,37 @@ void drawMappedSections(
       sectionEnd = count;
     }
 
-    for (uint16_t pixel = startPixel; pixel < sectionEnd; pixel++)
+    const uint16_t visibleStart = (startPixel < firstVisiblePixel) ? firstVisiblePixel : startPixel;
+
+    for (uint16_t pixel = visibleStart; pixel < sectionEnd; pixel++)
     {
       leds[pixel] = color;
     }
 
     for (uint16_t pixel = startPixel; pixel < sectionEnd; pixel += GRID_SPACING)
     {
-      leds[pixel] = CRGB::White;
+      if (pixel >= firstVisiblePixel)
+      {
+        leds[pixel] = CRGB::White;
+      }
     }
 
     if (sectionEnd > startPixel)
     {
-      drawMarker(leds, count, startPixel, BOUNDARY_WIDTH, CRGB::White);
-      drawMarker(leds, count, sectionEnd - 1, BOUNDARY_WIDTH, CRGB::White);
+      drawMarkerAfter(leds, count, startPixel, BOUNDARY_WIDTH, CRGB::White, firstVisiblePixel);
+      drawMarkerAfter(leds, count, sectionEnd - 1, BOUNDARY_WIDTH, CRGB::White, firstVisiblePixel);
     }
 
     startPixel = sectionEnd;
   }
 
-  drawMarker(leds, count, totalMappedLength(sections, sectionCount), NEXT_SECTION_MARKER_WIDTH, CRGB::Blue);
+  drawMarkerAfter(
+      leds,
+      count,
+      totalMappedLength(sections, sectionCount),
+      NEXT_SECTION_MARKER_WIDTH,
+      CRGB::Blue,
+      firstVisiblePixel);
 }
 
 void setup()
@@ -208,7 +267,8 @@ void loop()
           sectionMap.leds,
           sectionMap.ledCount,
           sectionMap.sections,
-          sectionMap.sectionCount);
+          sectionMap.sectionCount,
+          sectionMap.hideBeforePixel);
     }
   }
 
