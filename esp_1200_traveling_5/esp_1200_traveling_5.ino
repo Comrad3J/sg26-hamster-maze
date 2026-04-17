@@ -1,72 +1,248 @@
-// ESP32 + addressable LEDs split across three data pins
-// Strip A: 900 LEDs on GPIO 21
-// Strip B: 300 LEDs on GPIO 4
-// Strip C: 300 LEDs on GPIO 5 (D5)
-// Library needed: FastLED
-
 #include <FastLED.h>
+
+// V1 hamster movement on the calibrated maze.
+// Strip mapping:
+//   Strip 1 = GPIO 21, main path with split order B -> D -> C -> D
+//   Strip 2 = GPIO 4, short branch from A to C, ending at LED 149
+//   Strip 3 = GPIO 17, branch from A to B, ending at LED 258
 
 enum AnimationMode : uint8_t {
   TRAVELING_LIT,
   TRAVELING_DARK
 };
 
-constexpr uint8_t LED_PIN_A = 21; // trak 1
-constexpr uint8_t LED_PIN_B = 4;  // trak 2
-constexpr uint8_t LED_PIN_C = 17;  // trak 3
-constexpr uint16_t LED_COUNT_A = 900;
-constexpr uint16_t LED_COUNT_B = 300; 
-constexpr uint16_t LED_COUNT_C = 300;
-constexpr EOrder COLOR_ORDER = GRB;
-constexpr AnimationMode MODE = TRAVELING_DARK;
-constexpr uint8_t BRIGHTNESS = 20;
-constexpr uint8_t LIT_LEDS = 5;
-constexpr uint8_t DARK_LEDS = 7;
-constexpr uint16_t FRAME_DELAY_MS = 20;
+enum StripId : uint8_t {
+  STRIP_1,
+  STRIP_2,
+  STRIP_3
+};
 
-CRGB ledsA[LED_COUNT_A];
-CRGB ledsB[LED_COUNT_B];
-CRGB ledsC[LED_COUNT_C];
+enum SegmentId : uint8_t {
+  SEGMENT_1_1,
+  SEGMENT_1_2,
+  SEGMENT_1_3,
+  SEGMENT_1_4,
+  SEGMENT_2,
+  SEGMENT_3,
+  SEGMENT_COUNT
+};
+
+struct Segment {
+  StripId strip;
+  uint16_t startPixel;
+  uint16_t endPixel;
+};
+
+struct RouteOption {
+  SegmentId segment;
+  bool forward;
+};
+
+constexpr uint8_t LED_PIN_1 = 21;
+constexpr uint8_t LED_PIN_2 = 4;
+constexpr uint8_t LED_PIN_3 = 17;
+constexpr uint16_t LED_COUNT_1 = 900;
+constexpr uint16_t LED_COUNT_2 = 150;   // LEDs 0..149
+constexpr uint16_t LED_COUNT_3 = 259;   // LEDs 0..258
+constexpr EOrder COLOR_ORDER = RGB;
+
+constexpr AnimationMode MODE = TRAVELING_DARK;
+constexpr uint8_t BRIGHTNESS = 35;
+constexpr uint8_t HAMSTER_LENGTH = 8;
+constexpr uint16_t FRAME_DELAY_MS = 20;
+constexpr float SPEED_LEDS_PER_FRAME = 0.7f;
+
+constexpr Segment segments[SEGMENT_COUNT] = {
+  {STRIP_1, 0, 300},    // 1_1: A -> B
+  {STRIP_1, 301, 440},  // 1_2: B -> D
+  {STRIP_1, 441, 597},  // 1_3: D -> C
+  {STRIP_1, 598, 737},  // 1_4: C -> D
+  {STRIP_2, 0, 149},    // 2: A -> C
+  {STRIP_3, 0, 258}     // 3: A -> B
+};
+
+CRGB leds1[LED_COUNT_1];
+CRGB leds2[LED_COUNT_2];
+CRGB leds3[LED_COUNT_3];
+
+uint16_t segmentLength(SegmentId segmentId) {
+  const Segment &segment = segments[segmentId];
+  return (segment.endPixel - segment.startPixel) + 1;
+}
+
+CRGB *ledsForStrip(StripId strip) {
+  switch (strip) {
+    case STRIP_1:
+      return leds1;
+    case STRIP_2:
+      return leds2;
+    case STRIP_3:
+      return leds3;
+    default:
+      return leds1;
+  }
+}
+
+uint16_t pixelForOffset(SegmentId segmentId, bool forward, uint16_t offset) {
+  const Segment &segment = segments[segmentId];
+  return forward ? (segment.startPixel + offset) : (segment.endPixel - offset);
+}
+
+uint8_t getRouteOptions(SegmentId segmentId, bool arrivedAtStart, RouteOption options[3]) {
+  switch (segmentId) {
+    case SEGMENT_1_1:
+      if (arrivedAtStart) {
+        options[0] = {SEGMENT_1_1, true};
+        options[1] = {SEGMENT_2, true};
+        options[2] = {SEGMENT_3, true};
+        return 3;
+      }
+
+      options[0] = {SEGMENT_1_1, false};
+      options[1] = {SEGMENT_1_2, true};
+      options[2] = {SEGMENT_3, false};
+      return 3;
+
+    case SEGMENT_1_2:
+      if (arrivedAtStart) {
+        options[0] = {SEGMENT_1_2, true};
+        options[1] = {SEGMENT_1_1, false};
+        options[2] = {SEGMENT_3, false};
+        return 3;
+      }
+
+      options[0] = {SEGMENT_1_2, false};
+      options[1] = {SEGMENT_1_3, true};
+      options[2] = {SEGMENT_1_4, false};
+      return 3;
+
+    case SEGMENT_1_3:
+      if (arrivedAtStart) {
+        options[0] = {SEGMENT_1_3, true};
+        options[1] = {SEGMENT_1_2, false};
+        options[2] = {SEGMENT_1_4, false};
+        return 3;
+      }
+
+      options[0] = {SEGMENT_1_3, false};
+      options[1] = {SEGMENT_1_4, true};
+      options[2] = {SEGMENT_2, false};
+      return 3;
+
+    case SEGMENT_1_4:
+      if (arrivedAtStart) {
+        options[0] = {SEGMENT_1_4, true};
+        options[1] = {SEGMENT_1_3, false};
+        options[2] = {SEGMENT_2, false};
+        return 3;
+      }
+
+      options[0] = {SEGMENT_1_4, false};
+      options[1] = {SEGMENT_1_2, false};
+      options[2] = {SEGMENT_1_3, true};
+      return 3;
+
+    case SEGMENT_2:
+      if (arrivedAtStart) {
+        options[0] = {SEGMENT_2, true};
+        options[1] = {SEGMENT_1_1, true};
+        options[2] = {SEGMENT_3, true};
+        return 3;
+      }
+
+      options[0] = {SEGMENT_2, false};
+      options[1] = {SEGMENT_1_3, false};
+      options[2] = {SEGMENT_1_4, true};
+      return 3;
+
+    case SEGMENT_3:
+      if (arrivedAtStart) {
+        options[0] = {SEGMENT_3, true};
+        options[1] = {SEGMENT_1_1, true};
+        options[2] = {SEGMENT_2, true};
+        return 3;
+      }
+
+      options[0] = {SEGMENT_3, false};
+      options[1] = {SEGMENT_1_1, false};
+      options[2] = {SEGMENT_1_2, true};
+      return 3;
+
+    default:
+      options[0] = {SEGMENT_1_1, true};
+      return 1;
+  }
+}
+
+RouteOption chooseNextRoute(SegmentId segmentId, bool arrivedAtStart) {
+  RouteOption options[3];
+  const uint8_t optionCount = getRouteOptions(segmentId, arrivedAtStart, options);
+  return options[random(optionCount)];
+}
+
+void drawHamster(SegmentId segmentId, bool forward, int16_t headOffset) {
+  const Segment &segment = segments[segmentId];
+  CRGB *stripLeds = ledsForStrip(segment.strip);
+  const uint16_t length = segmentLength(segmentId);
+
+  for (uint8_t i = 0; i < HAMSTER_LENGTH; i++) {
+    const int16_t offset = headOffset - i;
+    if (offset < 0 || offset >= static_cast<int16_t>(length)) {
+      continue;
+    }
+
+    stripLeds[pixelForOffset(segmentId, forward, static_cast<uint16_t>(offset))] =
+      (MODE == TRAVELING_DARK) ? CRGB::Black : CRGB::White;
+  }
+}
 
 void setup() {
-  FastLED.addLeds<WS2812B, LED_PIN_A, COLOR_ORDER>(ledsA, LED_COUNT_A);
-  FastLED.addLeds<WS2812B, LED_PIN_B, COLOR_ORDER>(ledsB, LED_COUNT_B);
-  FastLED.addLeds<WS2812B, LED_PIN_C, COLOR_ORDER>(ledsC, LED_COUNT_C);
+  randomSeed(esp_random());
+
+  FastLED.addLeds<WS2812B, LED_PIN_1, COLOR_ORDER>(leds1, LED_COUNT_1);
+  FastLED.addLeds<WS2812B, LED_PIN_2, COLOR_ORDER>(leds2, LED_COUNT_2);
+  FastLED.addLeds<WS2812B, LED_PIN_3, COLOR_ORDER>(leds3, LED_COUNT_3);
   FastLED.setBrightness(BRIGHTNESS);
   FastLED.clear(true);
 }
 
 void loop() {
-  static uint16_t headA = 0;
-  static uint16_t headB = 0;
-  static uint16_t headC = 0;
+  static SegmentId currentSegment = SEGMENT_1_1;
+  static bool movingForward = true;
+  static float position = 0.0f;
 
   if (MODE == TRAVELING_DARK) {
-    fill_solid(ledsA, LED_COUNT_A, CRGB::White);
-    fill_solid(ledsB, LED_COUNT_B, CRGB::White);
-    fill_solid(ledsC, LED_COUNT_C, CRGB::White);
-
-    for (uint8_t i = 0; i < DARK_LEDS; i++) {
-      ledsA[(headA + i) % LED_COUNT_A] = CRGB::Black;
-      ledsB[(headB + i) % LED_COUNT_B] = CRGB::Black;
-      ledsC[(headC + i) % LED_COUNT_C] = CRGB::Black;
-    }
+    fill_solid(leds1, LED_COUNT_1, CRGB::White);
+    fill_solid(leds2, LED_COUNT_2, CRGB::White);
+    fill_solid(leds3, LED_COUNT_3, CRGB::White);
   } else {
-    fill_solid(ledsA, LED_COUNT_A, CRGB::Black);
-    fill_solid(ledsB, LED_COUNT_B, CRGB::Black);
-    fill_solid(ledsC, LED_COUNT_C, CRGB::Black);
-
-    for (uint8_t i = 0; i < LIT_LEDS; i++) {
-      ledsA[(headA + i) % LED_COUNT_A] = CRGB::White;
-      ledsB[(headB + i) % LED_COUNT_B] = CRGB::White;
-      ledsC[(headC + i) % LED_COUNT_C] = CRGB::White;
-    }
+    fill_solid(leds1, LED_COUNT_1, CRGB::Black);
+    fill_solid(leds2, LED_COUNT_2, CRGB::Black);
+    fill_solid(leds3, LED_COUNT_3, CRGB::Black);
   }
+
+  drawHamster(currentSegment, movingForward, static_cast<int16_t>(position));
 
   FastLED.show();
   delay(FRAME_DELAY_MS);
 
-  headA = (headA + 1) % LED_COUNT_A;
-  headB = (headB + 1) % LED_COUNT_B;
-  headC = (headC + 1) % LED_COUNT_C;
+  position += SPEED_LEDS_PER_FRAME;
+
+  const uint16_t currentLength = segmentLength(currentSegment);
+  if (position < currentLength) {
+    return;
+  }
+
+  const bool arrivedAtStart = !movingForward;
+  const float overflow = position - currentLength;
+  const RouteOption nextRoute = chooseNextRoute(currentSegment, arrivedAtStart);
+
+  currentSegment = nextRoute.segment;
+  movingForward = nextRoute.forward;
+  position = overflow;
+
+  const uint16_t nextLength = segmentLength(currentSegment);
+  if (position >= nextLength) {
+    position = nextLength - 1;
+  }
 }
