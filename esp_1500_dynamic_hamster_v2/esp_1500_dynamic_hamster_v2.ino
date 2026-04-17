@@ -78,6 +78,7 @@ struct Hamster
   RouteId route;
   bool forward;
   float position;
+  uint8_t hue;
 };
 
 constexpr uint8_t LED_PIN_1 = 21; // Strip 1
@@ -89,11 +90,12 @@ constexpr uint16_t LED_COUNT_2 = 150; // LEDs 0..149
 constexpr uint16_t LED_COUNT_3 = 259; // LEDs 0..258
 
 constexpr EOrder COLOR_ORDER = RGB;
-constexpr uint8_t BRIGHTNESS = 50;
+constexpr uint8_t BRIGHTNESS = 40;
 constexpr uint8_t HAMSTER_LENGTH = 8;
+constexpr uint8_t HAMSTER_COUNT = 2;
 constexpr uint16_t FRAME_DELAY_MS = 15;
-constexpr uint8_t INTERNAL_BEND_REVERSE_PERCENT = 5;
-constexpr float SPEED_MULTIPLIER = 1.55f;
+constexpr uint8_t INTERNAL_BEND_REVERSE_PERCENT = 0;
+constexpr float SPEED_MULTIPLIER = 1.75f;
 constexpr DisplayMode DISPLAY_MODE = DISPLAY_INVERTED;
 
 const Section strip1Sections[] = {
@@ -164,7 +166,9 @@ CRGB leds1[LED_COUNT_1];
 CRGB leds2[LED_COUNT_2];
 CRGB leds3[LED_COUNT_3];
 
-Hamster hamster = {ROUTE_1_A_TO_B, true, 0.0f};
+Hamster hamsters[HAMSTER_COUNT] = {
+    {ROUTE_1_A_TO_B, true, 0.0f, 34},
+    {ROUTE_2_A_TO_C, true, 0.0f, 145}};
 
 CRGB *ledsForStrip(StripId strip)
 {
@@ -302,11 +306,12 @@ float speedForCurrentPosition(const Hamster &state)
   const Section &section = *sectionPosition.section;
   const float progress = sectionPosition.progress;
   const float maxSpeed = maxSpeedForLength(section.length);
+  const float longSectionPenalty = 1.0f - (0.55f * smooth01((section.length - 18.0f) / 82.0f));
+  const float upwardEquivalent = constrain(maxSpeed * 0.14f * longSectionPenalty, 0.05f, maxSpeed * 0.20f);
 
   if (isMovingUp(section, state.forward))
   {
-    const float steadyPush = 0.16f + (0.05f * sin(progress * PI));
-    return SPEED_MULTIPLIER * constrain(maxSpeed * steadyPush, 0.08f, maxSpeed * 0.28f);
+    return SPEED_MULTIPLIER * upwardEquivalent;
   }
 
   if (isMovingDown(section, state.forward))
@@ -317,7 +322,8 @@ float speedForCurrentPosition(const Hamster &state)
   }
 
   const float bendCurve = sin(progress * PI);
-  return SPEED_MULTIPLIER * constrain(maxSpeed * (0.24f + (0.76f * bendCurve)), 0.20f, maxSpeed);
+  const float horizontalSpeed = constrain(maxSpeed * (0.24f + (0.76f * bendCurve)), 0.20f, maxSpeed) * 0.50f;
+  return SPEED_MULTIPLIER * max(horizontalSpeed, upwardEquivalent);
 }
 
 uint8_t routeOptionsForNode(NodeId node, RouteOption options[3])
@@ -340,95 +346,120 @@ uint8_t routeOptionsForNode(NodeId node, RouteOption options[3])
   return count;
 }
 
-void chooseRouteFromNode(NodeId node)
+void chooseRouteFromNode(Hamster &state, NodeId node)
 {
   RouteOption options[3];
   const uint8_t optionCount = routeOptionsForNode(node, options);
 
   if (optionCount == 0)
   {
-    hamster.forward = !hamster.forward;
+    state.forward = !state.forward;
     return;
   }
 
   const RouteOption next = options[random(optionCount)];
-  hamster.route = next.route;
-  hamster.forward = next.forward;
-  hamster.position = next.forward ? 0.0f : routeLength(next.route);
+  state.route = next.route;
+  state.forward = next.forward;
+  state.position = next.forward ? 0.0f : routeLength(next.route);
 }
 
-void handleBoundary(uint16_t boundary)
+void handleBoundary(Hamster &state, uint16_t boundary)
 {
-  const Route &route = routes[hamster.route];
-  const uint16_t length = routeLength(hamster.route);
-  hamster.position = boundary;
+  const Route &route = routes[state.route];
+  const uint16_t length = routeLength(state.route);
+  state.position = boundary;
 
   if (boundary == 0)
   {
-    chooseRouteFromNode(route.startNode);
+    chooseRouteFromNode(state, route.startNode);
     return;
   }
 
   if (boundary == length)
   {
-    chooseRouteFromNode(route.endNode);
+    chooseRouteFromNode(state, route.endNode);
     return;
   }
 
   if (random(100) < INTERNAL_BEND_REVERSE_PERCENT)
   {
-    hamster.forward = !hamster.forward;
+    state.forward = !state.forward;
   }
 }
 
-void updateHamster()
+void updateHamster(Hamster &state)
 {
   const SectionPosition sectionPosition =
-      findSectionPosition(hamster.route, hamster.position, hamster.forward);
-  const float speed = speedForCurrentPosition(hamster);
-  const uint16_t boundary = hamster.forward ? sectionPosition.endOffset : sectionPosition.startOffset;
-  const float nextPosition = hamster.position + (hamster.forward ? speed : -speed);
+      findSectionPosition(state.route, state.position, state.forward);
+  const float speed = speedForCurrentPosition(state);
+  const uint16_t boundary = state.forward ? sectionPosition.endOffset : sectionPosition.startOffset;
+  const float nextPosition = state.position + (state.forward ? speed : -speed);
 
-  if ((hamster.forward && nextPosition >= boundary) ||
-      (!hamster.forward && nextPosition <= boundary))
+  if ((state.forward && nextPosition >= boundary) ||
+      (!state.forward && nextPosition <= boundary))
   {
-    handleBoundary(boundary);
+    handleBoundary(state, boundary);
     return;
   }
 
-  hamster.position = nextPosition;
+  state.position = nextPosition;
 }
 
-void drawHamster()
+void drawBackground()
 {
   const CRGB background = (DISPLAY_MODE == DISPLAY_INVERTED) ? CRGB::White : CRGB::Black;
-  CRGB hamsterColor = CRGB::Black;
-  if (DISPLAY_MODE == DISPLAY_NORMAL)
-  {
-    hamsterColor = CHSV(34, 210, 255);
-  }
 
   fill_solid(leds1, LED_COUNT_1, background);
   fill_solid(leds2, LED_COUNT_2, background);
   fill_solid(leds3, LED_COUNT_3, background);
+}
 
-  const Route &route = routes[hamster.route];
+CRGB invertedHamsterColor(uint8_t trailIndex)
+{
+  if (trailIndex == 0 || trailIndex == HAMSTER_LENGTH - 1)
+  {
+    return CRGB(170, 170, 170);
+  }
+
+  if (trailIndex == 1 || trailIndex == HAMSTER_LENGTH - 2)
+  {
+    return CRGB(55, 55, 55);
+  }
+
+  return CRGB::Black;
+}
+
+void drawHamster(const Hamster &state)
+{
+  CRGB hamsterColor = CRGB::Black;
+
+  const Route &route = routes[state.route];
   CRGB *leds = ledsForStrip(route.strip);
   const uint16_t ledCount = ledCountForStrip(route.strip);
-  const int8_t trailDirection = hamster.forward ? -1 : 1;
+  const int8_t trailDirection = state.forward ? -1 : 1;
 
   for (uint8_t i = 0; i < HAMSTER_LENGTH; i++)
   {
-    const float trailPosition = hamster.position + (trailDirection * i);
-    if (trailPosition < 0.0f || trailPosition > routeLength(hamster.route))
+    const float trailPosition = state.position + (trailDirection * i);
+    if (trailPosition < 0.0f || trailPosition > routeLength(state.route))
     {
       continue;
     }
 
-    const uint16_t pixel = pixelForRoutePosition(hamster.route, trailPosition);
+    const uint16_t pixel = pixelForRoutePosition(state.route, trailPosition);
     if (pixel >= ledCount)
     {
       continue;
+    }
+
+    if (DISPLAY_MODE == DISPLAY_NORMAL)
+    {
+      const uint8_t brightness = 255 - (i * (170 / HAMSTER_LENGTH));
+      hamsterColor = CHSV(state.hue, 210, brightness);
+    }
+    else
+    {
+      hamsterColor = invertedHamsterColor(i);
     }
 
     leds[pixel] = hamsterColor;
@@ -443,13 +474,23 @@ void setup()
   FastLED.addLeds<WS2812B, LED_PIN_2, COLOR_ORDER>(leds2, LED_COUNT_2);
   FastLED.addLeds<WS2812B, LED_PIN_3, COLOR_ORDER>(leds3, LED_COUNT_3);
   FastLED.setBrightness(BRIGHTNESS);
+  FastLED.setDither(0);
   FastLED.clear(true);
 }
 
 void loop()
 {
-  drawHamster();
+  drawBackground();
+  for (uint8_t i = 0; i < HAMSTER_COUNT; i++)
+  {
+    drawHamster(hamsters[i]);
+  }
+
   FastLED.show();
   delay(FRAME_DELAY_MS);
-  updateHamster();
+
+  for (uint8_t i = 0; i < HAMSTER_COUNT; i++)
+  {
+    updateHamster(hamsters[i]);
+  }
 }
