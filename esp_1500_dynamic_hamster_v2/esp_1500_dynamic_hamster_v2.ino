@@ -36,6 +36,12 @@ enum RouteId : uint8_t
   ROUTE_COUNT
 };
 
+enum DisplayMode : uint8_t
+{
+  DISPLAY_NORMAL,
+  DISPLAY_INVERTED
+};
+
 struct Section
 {
   uint16_t length;
@@ -83,10 +89,12 @@ constexpr uint16_t LED_COUNT_2 = 150; // LEDs 0..149
 constexpr uint16_t LED_COUNT_3 = 259; // LEDs 0..258
 
 constexpr EOrder COLOR_ORDER = RGB;
-constexpr uint8_t BRIGHTNESS = 95;
+constexpr uint8_t BRIGHTNESS = 50;
 constexpr uint8_t HAMSTER_LENGTH = 8;
-constexpr uint16_t FRAME_DELAY_MS = 20;
-constexpr uint8_t INTERNAL_BEND_REVERSE_CHANCE = 3;
+constexpr uint16_t FRAME_DELAY_MS = 15;
+constexpr uint8_t INTERNAL_BEND_REVERSE_PERCENT = 5;
+constexpr float SPEED_MULTIPLIER = 1.55f;
+constexpr DisplayMode DISPLAY_MODE = DISPLAY_INVERTED;
 
 const Section strip1Sections[] = {
     {27, SECTION_HORIZONTAL},
@@ -297,20 +305,19 @@ float speedForCurrentPosition(const Hamster &state)
 
   if (isMovingUp(section, state.forward))
   {
-    const float jitter = static_cast<float>(random(-8, 9)) / 100.0f;
-    const float bendBrake = 0.78f + (0.22f * sin(progress * PI));
-    return constrain((maxSpeed * 0.46f * bendBrake) + jitter, 0.18f, maxSpeed * 0.72f);
+    const float steadyPush = 0.16f + (0.05f * sin(progress * PI));
+    return SPEED_MULTIPLIER * constrain(maxSpeed * steadyPush, 0.08f, maxSpeed * 0.28f);
   }
 
   if (isMovingDown(section, state.forward))
   {
-    const float gravity = 0.28f + (0.92f * smooth01(progress));
-    const float endBrake = 1.0f - (0.42f * smooth01((progress - 0.78f) / 0.22f));
-    return constrain(maxSpeed * gravity * endBrake, 0.22f, maxSpeed);
+    const float gravity = 0.42f + (0.34f * smooth01(progress));
+    const float suddenBrake = 1.0f - (0.82f * smooth01((progress - 0.86f) / 0.14f));
+    return SPEED_MULTIPLIER * constrain(maxSpeed * gravity * suddenBrake, 0.08f, maxSpeed * 0.72f);
   }
 
   const float bendCurve = sin(progress * PI);
-  return constrain(maxSpeed * (0.24f + (0.76f * bendCurve)), 0.20f, maxSpeed);
+  return SPEED_MULTIPLIER * constrain(maxSpeed * (0.24f + (0.76f * bendCurve)), 0.20f, maxSpeed);
 }
 
 uint8_t routeOptionsForNode(NodeId node, RouteOption options[3])
@@ -368,7 +375,7 @@ void handleBoundary(uint16_t boundary)
     return;
   }
 
-  if (random(INTERNAL_BEND_REVERSE_CHANCE) == 0)
+  if (random(100) < INTERNAL_BEND_REVERSE_PERCENT)
   {
     hamster.forward = !hamster.forward;
   }
@@ -394,9 +401,16 @@ void updateHamster()
 
 void drawHamster()
 {
-  fill_solid(leds1, LED_COUNT_1, CRGB::Black);
-  fill_solid(leds2, LED_COUNT_2, CRGB::Black);
-  fill_solid(leds3, LED_COUNT_3, CRGB::Black);
+  const CRGB background = (DISPLAY_MODE == DISPLAY_INVERTED) ? CRGB::White : CRGB::Black;
+  CRGB hamsterColor = CRGB::Black;
+  if (DISPLAY_MODE == DISPLAY_NORMAL)
+  {
+    hamsterColor = CHSV(34, 210, 255);
+  }
+
+  fill_solid(leds1, LED_COUNT_1, background);
+  fill_solid(leds2, LED_COUNT_2, background);
+  fill_solid(leds3, LED_COUNT_3, background);
 
   const Route &route = routes[hamster.route];
   CRGB *leds = ledsForStrip(route.strip);
@@ -417,8 +431,7 @@ void drawHamster()
       continue;
     }
 
-    const uint8_t brightness = 255 - (i * (170 / HAMSTER_LENGTH));
-    leds[pixel] = CHSV(34, 210, brightness);
+    leds[pixel] = hamsterColor;
   }
 }
 
