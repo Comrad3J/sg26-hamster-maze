@@ -7,8 +7,8 @@ constexpr uint8_t LED_PIN_1 = 21;   // Strip 1
 constexpr uint8_t LED_PIN_2 = 4;    // Strip 2
 constexpr uint8_t LED_PIN_3 = 17;   // Strip 3
 
-constexpr uint16_t LED_COUNT_1 = 738;  // LEDs 0..737
-constexpr uint16_t LED_COUNT_2 = 150;  // LEDs 0..149
+constexpr uint16_t LED_COUNT_1 = 598;  // LEDs 0..597
+constexpr uint16_t LED_COUNT_2 = 290;  // LEDs 0..289
 constexpr uint16_t LED_COUNT_3 = 259;  // LEDs 0..258
 
 constexpr EOrder COLOR_ORDER = RGB;

@@ -30,8 +30,8 @@ constexpr uint8_t LED_PIN_1 = 21; // Strip 1
 constexpr uint8_t LED_PIN_2 = 4;  // Strip 2
 constexpr uint8_t LED_PIN_3 = 17; // Strip 3
 
-constexpr uint16_t LED_COUNT_1 = 738; // LEDs 0..737
-constexpr uint16_t LED_COUNT_2 = 150; // LEDs 0..149
+constexpr uint16_t LED_COUNT_1 = 598; // LEDs 0..597
+constexpr uint16_t LED_COUNT_2 = 290; // LEDs 0..289
 constexpr uint16_t LED_COUNT_3 = 259; // LEDs 0..258
 
 constexpr EOrder COLOR_ORDER = RGB;
@@ -42,7 +42,7 @@ constexpr uint8_t NEXT_SECTION_MARKER_WIDTH = 5;
 constexpr bool SHOW_STRIP_1_SECTIONS = true;
 constexpr bool SHOW_STRIP_2_SECTIONS = false;
 constexpr bool SHOW_STRIP_3_SECTIONS = false;
-constexpr uint16_t STRIP_1_HIDE_BEFORE_PIXEL = 597; // Keeps LEDs 0..596 off while mapping after split C.
+constexpr uint16_t STRIP_1_HIDE_BEFORE_PIXEL = 0; // Show the full shortened strip-1 run by default.
 constexpr uint16_t STRIP_2_HIDE_BEFORE_PIXEL = 0;
 constexpr uint16_t STRIP_3_HIDE_BEFORE_PIXEL = 0;
 
@@ -52,7 +52,10 @@ const StripSection strip2Sections[] = {
     {20, SECTION_UP},
     {18, SECTION_HORIZONTAL},
     {25, SECTION_UP},
-    {21, SECTION_HORIZONTAL}};
+    {21, SECTION_HORIZONTAL},
+    {12, SECTION_HORIZONTAL},
+    {100, SECTION_DOWN},
+    {28, SECTION_UP}};
 
 const StripSection strip3Sections[] = {
     {15, SECTION_UP},
@@ -100,12 +103,8 @@ const StripSection strip1Sections[] = {
     {22, SECTION_HORIZONTAL},
     {5, SECTION_HORIZONTAL},
     {30, SECTION_DOWN},
-    {44, SECTION_UP},
-    // PASSES THORUGH SPLIT C (SHOULD BE 597)
-    {12, SECTION_HORIZONTAL},
-    {100, SECTION_DOWN},
-    {28, SECTION_UP}
-    // LOOPS BACK TO D (SHOULD BE 737 here)
+    {44, SECTION_UP}
+    // PASSES THROUGH SPLIT C (SHOULD BE 597)
 };
 
 constexpr uint8_t STRIP_1_SECTION_COUNT =

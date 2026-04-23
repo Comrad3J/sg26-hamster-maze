@@ -30,8 +30,8 @@ enum RouteId : uint8_t
   ROUTE_1_A_TO_B,
   ROUTE_1_B_TO_D,
   ROUTE_1_D_TO_C,
-  ROUTE_1_C_TO_D,
   ROUTE_2_A_TO_C,
+  ROUTE_2_C_TO_D,
   ROUTE_3_A_TO_B,
   ROUTE_COUNT
 };
@@ -85,12 +85,12 @@ constexpr uint8_t LED_PIN_1 = 21; // Strip 1
 constexpr uint8_t LED_PIN_2 = 4;  // Strip 2
 constexpr uint8_t LED_PIN_3 = 17; // Strip 3
 
-constexpr uint16_t LED_COUNT_1 = 738; // LEDs 0..737
-constexpr uint16_t LED_COUNT_2 = 150; // LEDs 0..149
+constexpr uint16_t LED_COUNT_1 = 598; // LEDs 0..597
+constexpr uint16_t LED_COUNT_2 = 290; // LEDs 0..289
 constexpr uint16_t LED_COUNT_3 = 259; // LEDs 0..258
 
 constexpr EOrder COLOR_ORDER = RGB;
-constexpr uint8_t BRIGHTNESS = 40;
+constexpr uint8_t BRIGHTNESS = 60;
 constexpr uint8_t HAMSTER_LENGTH = 8;
 constexpr uint8_t HAMSTER_COUNT = 2;
 constexpr uint16_t FRAME_DELAY_MS = 15;
@@ -126,10 +126,7 @@ const Section strip1Sections[] = {
     {22, SECTION_HORIZONTAL},
     {5, SECTION_HORIZONTAL},
     {30, SECTION_DOWN},
-    {44, SECTION_UP},
-    {12, SECTION_HORIZONTAL},
-    {100, SECTION_DOWN},
-    {28, SECTION_UP}};
+    {44, SECTION_UP}};
 
 const Section strip2Sections[] = {
     {60, SECTION_UP},
@@ -137,7 +134,10 @@ const Section strip2Sections[] = {
     {20, SECTION_UP},
     {18, SECTION_HORIZONTAL},
     {25, SECTION_UP},
-    {21, SECTION_HORIZONTAL}};
+    {21, SECTION_HORIZONTAL},
+    {12, SECTION_HORIZONTAL},
+    {100, SECTION_DOWN},
+    {28, SECTION_UP}};
 
 const Section strip3Sections[] = {
     {15, SECTION_UP},
@@ -158,8 +158,8 @@ const Route routes[ROUTE_COUNT] = {
     {STRIP_1, 0, 300, NODE_A, NODE_B, strip1Sections, 14},
     {STRIP_1, 300, 440, NODE_B, NODE_D, strip1Sections + 14, 6},
     {STRIP_1, 440, 597, NODE_D, NODE_C, strip1Sections + 20, 8},
-    {STRIP_1, 597, 737, NODE_C, NODE_D, strip1Sections + 28, 3},
     {STRIP_2, 0, 149, NODE_A, NODE_C, strip2Sections, 6},
+    {STRIP_2, 149, 289, NODE_C, NODE_D, strip2Sections + 6, 3},
     {STRIP_3, 0, 258, NODE_A, NODE_B, strip3Sections, 13}};
 
 CRGB leds1[LED_COUNT_1];
@@ -307,7 +307,8 @@ float speedForCurrentPosition(const Hamster &state)
   const float progress = sectionPosition.progress;
   const float maxSpeed = maxSpeedForLength(section.length);
   const float longSectionPenalty = 1.0f - (0.55f * smooth01((section.length - 18.0f) / 82.0f));
-  const float upwardEquivalent = constrain(maxSpeed * 0.14f * longSectionPenalty, 0.05f, maxSpeed * 0.20f);
+  const float upwardBase = maxSpeed * (0.28f + (0.10f * smooth01(progress)));
+  const float upwardEquivalent = constrain(upwardBase * longSectionPenalty, 0.22f, maxSpeed * 0.38f);
 
   if (isMovingUp(section, state.forward))
   {
@@ -357,7 +358,31 @@ void chooseRouteFromNode(Hamster &state, NodeId node)
     return;
   }
 
-  const RouteOption next = options[random(optionCount)];
+  RouteOption selectableOptions[3];
+  uint8_t selectableCount = 0;
+  const bool reversingCurrentRoute = !state.forward;
+
+  for (uint8_t i = 0; i < optionCount; i++)
+  {
+    const bool isImmediateReverse =
+        options[i].route == state.route &&
+        options[i].forward == reversingCurrentRoute;
+
+    if (!isImmediateReverse || optionCount == 1)
+    {
+      selectableOptions[selectableCount++] = options[i];
+    }
+  }
+
+  if (selectableCount == 0)
+  {
+    for (uint8_t i = 0; i < optionCount; i++)
+    {
+      selectableOptions[selectableCount++] = options[i];
+    }
+  }
+
+  const RouteOption next = selectableOptions[random(selectableCount)];
   state.route = next.route;
   state.forward = next.forward;
   state.position = next.forward ? 0.0f : routeLength(next.route);
@@ -416,16 +441,6 @@ void drawBackground()
 
 CRGB invertedHamsterColor(uint8_t trailIndex)
 {
-  if (trailIndex == 0 || trailIndex == HAMSTER_LENGTH - 1)
-  {
-    return CRGB(170, 170, 170);
-  }
-
-  if (trailIndex == 1 || trailIndex == HAMSTER_LENGTH - 2)
-  {
-    return CRGB(55, 55, 55);
-  }
-
   return CRGB::Black;
 }
 
