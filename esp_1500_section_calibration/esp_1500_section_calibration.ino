@@ -16,12 +16,19 @@ struct StripSection
   SectionOrientation orientation;
 };
 
+struct StripSplitMarker
+{
+  uint16_t pixel;
+};
+
 struct StripSectionMap
 {
   CRGB *leds;
   uint16_t ledCount;
   const StripSection *sections;
   uint8_t sectionCount;
+  const StripSplitMarker *splits;
+  uint8_t splitCount;
   bool enabled;
   uint16_t hideBeforePixel;
 };
@@ -52,8 +59,8 @@ const StripSection strip2Sections[] = {
     {20, SECTION_UP},
     {18, SECTION_HORIZONTAL},
     {25, SECTION_UP},
-    {21, SECTION_HORIZONTAL},
-    {12, SECTION_HORIZONTAL},
+    {14, SECTION_HORIZONTAL},
+    {19, SECTION_HORIZONTAL},
     {100, SECTION_DOWN},
     {28, SECTION_UP}};
 
@@ -107,6 +114,21 @@ const StripSection strip1Sections[] = {
     // PASSES THROUGH SPLIT C (SHOULD BE 597)
 };
 
+const StripSplitMarker strip1Splits[] = {
+    {300}, // B
+    {440}, // D
+    {597}  // C
+};
+
+const StripSplitMarker strip2Splits[] = {
+    {142}, // C
+    {289}  // D
+};
+
+const StripSplitMarker strip3Splits[] = {
+    {258} // B
+};
+
 constexpr uint8_t STRIP_1_SECTION_COUNT =
     sizeof(strip1Sections) / sizeof(strip1Sections[0]);
 
@@ -116,14 +138,23 @@ constexpr uint8_t STRIP_2_SECTION_COUNT =
 constexpr uint8_t STRIP_3_SECTION_COUNT =
     sizeof(strip3Sections) / sizeof(strip3Sections[0]);
 
+constexpr uint8_t STRIP_1_SPLIT_COUNT =
+    sizeof(strip1Splits) / sizeof(strip1Splits[0]);
+
+constexpr uint8_t STRIP_2_SPLIT_COUNT =
+    sizeof(strip2Splits) / sizeof(strip2Splits[0]);
+
+constexpr uint8_t STRIP_3_SPLIT_COUNT =
+    sizeof(strip3Splits) / sizeof(strip3Splits[0]);
+
 CRGB leds1[LED_COUNT_1];
 CRGB leds2[LED_COUNT_2];
 CRGB leds3[LED_COUNT_3];
 
 const StripSectionMap stripSectionMaps[] = {
-    {leds1, LED_COUNT_1, strip1Sections, STRIP_1_SECTION_COUNT, SHOW_STRIP_1_SECTIONS, STRIP_1_HIDE_BEFORE_PIXEL},
-    {leds2, LED_COUNT_2, strip2Sections, STRIP_2_SECTION_COUNT, SHOW_STRIP_2_SECTIONS, STRIP_2_HIDE_BEFORE_PIXEL},
-    {leds3, LED_COUNT_3, strip3Sections, STRIP_3_SECTION_COUNT, SHOW_STRIP_3_SECTIONS, STRIP_3_HIDE_BEFORE_PIXEL}};
+    {leds1, LED_COUNT_1, strip1Sections, STRIP_1_SECTION_COUNT, strip1Splits, STRIP_1_SPLIT_COUNT, SHOW_STRIP_1_SECTIONS, STRIP_1_HIDE_BEFORE_PIXEL},
+    {leds2, LED_COUNT_2, strip2Sections, STRIP_2_SECTION_COUNT, strip2Splits, STRIP_2_SPLIT_COUNT, SHOW_STRIP_2_SECTIONS, STRIP_2_HIDE_BEFORE_PIXEL},
+    {leds3, LED_COUNT_3, strip3Sections, STRIP_3_SECTION_COUNT, strip3Splits, STRIP_3_SPLIT_COUNT, SHOW_STRIP_3_SECTIONS, STRIP_3_HIDE_BEFORE_PIXEL}};
 
 constexpr uint8_t STRIP_COUNT =
     sizeof(stripSectionMaps) / sizeof(stripSectionMaps[0]);
@@ -188,11 +219,33 @@ void drawMarkerAfter(CRGB *leds, uint16_t count, uint16_t pixel, uint8_t width, 
   drawMarker(leds, count, pixel, width, color);
 }
 
+void drawSplitMarker(CRGB *leds, uint16_t count, uint16_t pixel, uint16_t firstVisiblePixel)
+{
+  if (pixel < firstVisiblePixel || pixel >= count)
+  {
+    return;
+  }
+
+  if (pixel > 0 && pixel - 1 >= firstVisiblePixel)
+  {
+    leds[pixel - 1] = CRGB::Red;
+  }
+
+  leds[pixel] = CRGB::Green;
+
+  if (pixel + 1 < count)
+  {
+    leds[pixel + 1] = CRGB::Blue;
+  }
+}
+
 void drawMappedSections(
     CRGB *leds,
     uint16_t count,
     const StripSection *sections,
     uint8_t sectionCount,
+    const StripSplitMarker *splits,
+    uint8_t splitCount,
     uint16_t firstVisiblePixel)
 {
   fill_solid(leds, count, CRGB::Black);
@@ -239,6 +292,11 @@ void drawMappedSections(
       NEXT_SECTION_MARKER_WIDTH,
       CRGB::Blue,
       firstVisiblePixel);
+
+  for (uint8_t splitIndex = 0; splitIndex < splitCount; splitIndex++)
+  {
+    drawSplitMarker(leds, count, splits[splitIndex].pixel, firstVisiblePixel);
+  }
 }
 
 void setup()
@@ -267,6 +325,8 @@ void loop()
           sectionMap.ledCount,
           sectionMap.sections,
           sectionMap.sectionCount,
+          sectionMap.splits,
+          sectionMap.splitCount,
           sectionMap.hideBeforePixel);
     }
   }

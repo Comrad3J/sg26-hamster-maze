@@ -480,21 +480,6 @@ void drawBackground()
 
 }
 
-void drawStrip1EndDebugMarkers()
-{
-  // Strip 1 end debug mapping, final five LEDs before/at split C:
-  // LED 593 = red, 4 LEDs before the end, in the final 44-up section.
-  // LED 594 = green, 3 LEDs before the end, in the final 44-up section.
-  // LED 595 = blue, 2 LEDs before the end, in the final 44-up section.
-  // LED 596 = orange, 1 LED before the end, in the final 44-up section.
-  // LED 597 = purple, strip 1 end pixel at split C.
-  leds1[593] = CRGB::Red;
-  leds1[594] = CRGB::Green;
-  leds1[595] = CRGB::Blue;
-  leds1[596] = CRGB::Orange;
-  leds1[597] = CRGB::Purple;
-}
-
 CRGB invertedHamsterColor(uint8_t trailIndex)
 {
   return CRGB::Black;
@@ -678,7 +663,16 @@ void setup()
 void loop()
 {
   drawBackground();
-  drawStrip1EndDebugMarkers();
+  for (uint8_t i = 0; i < HAMSTER_COUNT; i++)
+  {
+    drawHamster(hamsters[i]);
+  }
+
   FastLED.show();
   delay(FRAME_DELAY_MS);
+
+  for (uint8_t i = 0; i < HAMSTER_COUNT; i++)
+  {
+    updateHamster(hamsters[i]);
+  }
 }
